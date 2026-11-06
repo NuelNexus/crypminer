@@ -106,7 +106,7 @@
       <div><span class="label">CPU load</span><b id="cpuLoad">—</b><small id="cpuName">—</small></div>
       <div><span class="label">Session</span><b id="session">—</b><small id="sessionHashes">—</small></div>
       <div><span class="label">Lifetime</span><b id="lifetime">—</b><small id="lifetimeHashes">—</small></div>
-      <div><span class="label">SOL price</span><b id="solPrice">—</b><small id="xmrPrice">—</small></div>
+      <div><span class="label" id="coinPriceLabel">SOL price</span><b id="solPrice">—</b><small id="xmrPrice">—</small></div>
     </section>
 
     <!-- History + tuning -->
@@ -193,7 +193,7 @@
       <div class="payments">
         <div class="section-head">
           <h2>Payouts</h2>
-          <a class="head-link" id="explorerLink" target="_blank" rel="noreferrer">Wallet on Solscan ↗</a>
+          <a class="head-link" id="explorerLink" target="_blank" rel="noreferrer">Wallet on explorer ↗</a>
         </div>
         <table>
           <thead><tr><th>Date</th><th class="num">Amount</th><th>Status</th></tr></thead>
@@ -209,8 +209,14 @@
     <form method="dialog" id="settingsForm">
       <h2>Settings</h2>
       <label class="fld">
-        <span>Payout address (Solana network)</span>
+        <span>Payout coin</span>
+        <select name="coin" id="sCoin"></select>
+        <small>unMineable converts your mining into this coin. Coins with a low minimum payout pay more often.</small>
+      </label>
+      <label class="fld">
+        <span>Payout address</span>
         <input name="address" id="sAddress" spellcheck="false" autocomplete="off">
+        <small id="sAddressHint">A wallet address for the coin above. Kiln checks it with unMineable when you save.</small>
         <small class="err" data-err="address"></small>
       </label>
       <label class="fld">

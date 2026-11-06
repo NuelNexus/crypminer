@@ -88,7 +88,7 @@ async function api(route, body) {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(body ? 20000 : 4000),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || Object.values(json.errors || {})[0] || `HTTP ${res.status}`);
@@ -194,12 +194,12 @@ function frame() {
   L.push('');
 
   // Wallet
-  L.push(section(`WALLET · ${sym}`, `all devices combined · pool data ${ago(e.poolUpdated)}${e.poolError ? ' · ' + e.poolError : ''}`));
-  const price = sym === 'SOL' ? s.market.solUsd : null;
+  L.push(section(`WALLET · ${sym}${e.chain ? ' on ' + e.chain : ''}`, `${short(s.settings.address)} · all devices combined · pool data ${ago(e.poolUpdated)}${e.poolError ? ' · ' + e.poolError : ''}`));
+  const price = s.market.coinUsd ?? (sym === 'SOL' ? s.market.solUsd : null);
   const frac = e.balance != null && e.threshold ? e.balance / e.threshold : 0;
   L.push(`  Balance    ${c.bold(coin(e.balance, sym))} ${c.dim(usd(e.balance != null && price ? e.balance * price : null))}   payout at ${coin(e.threshold, sym)}  ${bar(frac, 20)} ${num(frac * 100, 1)}%`);
   L.push(`  Earned     24h ${coin(e.past24h)} ${c.dim('·')} 7d ${coin(e.past7d)} ${c.dim('·')} 30d ${coin(e.past30d)} ${c.dim('·')} paid out ${coin(e.paid)} ${c.dim('·')} fee ${e.fee}%`);
-  L.push(`  Fleet rate ${c.bold(hash(f.hashrate))} from ${f.online} device${f.online === 1 ? '' : 's'} ${c.dim('·')} est. ${c.bold(coin(f.perDay, sym))}/day ${c.dim(usd(f.perDay != null && price ? f.perDay * price : null) + '/day')} ${c.dim('·')} SOL ${usd(s.market.solUsd)} XMR ${usd(s.market.xmrUsd)}`);
+  L.push(`  Fleet rate ${c.bold(hash(f.hashrate))} from ${f.online} device${f.online === 1 ? '' : 's'} ${c.dim('·')} est. ${c.bold(coin(f.perDay, sym))}/day ${c.dim(usd(f.perDay != null && price ? f.perDay * price : null) + '/day')} ${c.dim('·')} ${sym} ${usd(price)} XMR ${usd(s.market.xmrUsd)}`);
   L.push('');
 
   // Devices
@@ -250,7 +250,7 @@ function footer(W) {
   const mining = state && ['running', 'starting'].includes(state.miner.status);
   const keys = [
     ['s', mining ? 'stop' : 'start'], ['m', 'mode'], ['+/-', 'threads'], ['0', 'auto'],
-    ['t', state?.tune.active ? 'cancel tune' : 'auto-tune'], ['w', 'rename'], ['d', 'web'],
+    ['t', state?.tune.active ? 'cancel tune' : 'auto-tune'], ['c', 'coin'], ['w', 'rename'], ['d', 'web'],
     ['q', core ? 'quit + stop mining' : 'quit (Kiln keeps mining)'],
   ];
   return ' ' + keys.map(([k, v]) => `${c.bold(c.cyan(k))} ${v}`).join(c.dim(' · '));
@@ -307,6 +307,21 @@ function onKey(str, key = {}) {
       return st.tune.active
         ? act(() => api('/api/autotune/cancel', {}), 'Auto-tune cancelled')
         : act(() => api('/api/autotune', {}), 'Auto-tune started: tries a few thread counts, about a minute each');
+    case 'c': case 'C':
+      // Two steps: the coin, then the address that should receive it.
+      input = {
+        label: 'Payout coin (e.g. USDT, LTC, SOL)', value: st.settings.coin,
+        onDone: (coinSym) => {
+          coinSym = coinSym.trim().toUpperCase();
+          if (!coinSym) return;
+          input = {
+            label: `${coinSym} address`, value: coinSym === st.settings.coin ? st.settings.address : '',
+            onDone: (address) => act(() => api('/api/settings', { coin: coinSym, address: address.trim() }), `Now paying out in ${coinSym}. Mining restarts if it was running.`),
+          };
+          render();
+        },
+      };
+      return render();
     case 'w': case 'W':
       input = { label: 'Device name', value: st.settings.worker, onDone: (v) => act(() => api('/api/settings', { worker: v }), `Device name: ${v}`) };
       return render();

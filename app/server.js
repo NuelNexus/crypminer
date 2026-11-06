@@ -66,6 +66,7 @@ const defaultWorker = (os.hostname().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24)
 const settings = Object.assign({
   coin: 'SOL',
   address: 'BiwDe7t7iguzrQgUbowSadMRM29pybo3j1eBTA5NvWVS',
+  network: 'SOL',         // the payout chain unMineable detected for the address
   worker: defaultWorker,
   threads: null,          // null = use recommended
   mode: 'balanced',       // balanced | max
@@ -78,23 +79,50 @@ function argValue(name) {
   return i > 0 ? process.argv[i + 1] : undefined;
 }
 if (/^[A-Za-z0-9_-]{1,24}$/.test(argValue('--worker') || '')) settings.worker = argValue('--worker');
-if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(argValue('--address') || '')) settings.address = argValue('--address');
+// The address is checked against the pool when Kiln starts (see checkPayout).
+if (/^[A-Za-z0-9]{2,12}$/.test(argValue('--coin') || '')) settings.coin = argValue('--coin').toUpperCase();
+if (/^[A-Za-z0-9:_-]{10,120}$/.test(argValue('--address') || '')) settings.address = argValue('--address');
+const accountKey = () => `${settings.coin}:${settings.address}`;
 
 const totals = Object.assign({ hashes: 0, seconds: 0, sessions: 0, firstStart: null }, readJson('totals.json', {}));
 
 // history.minutes: [t, avgHashrate] one per minute, 7 days
 // history.earn:    [t, balance + paid] one per hour, 90 days
-const history = Object.assign({ minutes: [], earn: [] }, readJson('history.json', {}));
+// history.earnArchive keeps the earnings chart of wallets you switched away from.
+const history = Object.assign({ minutes: [], earn: [], earnFor: null, earnArchive: {} }, readJson('history.json', {}));
+history.earnFor ||= accountKey();
 
-// Hashes each device (worker) has contributed to the wallet, as reported by the pool.
+// Hashes each device (worker) has contributed, per wallet, as reported by the pool.
 // unMineable only reports earnings for the whole wallet, so they are split by this.
-const fleet = Object.assign({ workers: {}, lastAt: null }, readJson('fleet.json', {}));
+const fleetStore = readJson('fleet.json', {});
+if (fleetStore.workers) { fleetStore.accounts = { [accountKey()]: { workers: fleetStore.workers, lastAt: fleetStore.lastAt } }; delete fleetStore.workers; delete fleetStore.lastAt; }
+fleetStore.accounts ||= {};
+const fleetNow = () => (fleetStore.accounts[accountKey()] ||= { workers: {}, lastAt: null });
+
+// Called after the coin or address changes.
+function useEarnHistoryForWallet() {
+  const key = accountKey();
+  if (history.earnFor === key) return;
+  history.earnArchive[history.earnFor] = history.earn;
+  history.earn = history.earnArchive[key] || [];
+  delete history.earnArchive[key];
+  history.earnFor = key;
+}
+useEarnHistoryForWallet(); // in case --coin / --address changed it
+
+function switchAccount() {
+  useEarnHistoryForWallet();
+  Object.assign(pool, { uuid: null, uuidFor: null, account: null, stats: null, payments: [], workers: [], updated: null, error: null });
+  market.coinUsd = null;
+  refreshMarket();
+  refreshPool();
+}
 
 function saveAll() {
   writeJson('settings.json', settings);
   writeJson('totals.json', totals);
   writeJson('history.json', history);
-  writeJson('fleet.json', fleet);
+  writeJson('fleet.json', fleetStore);
 }
 
 // ---------- system info ----------
@@ -474,9 +502,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- earnings, prices, network ----------
 
-const market = { solUsd: null, xmrUsd: null, updated: null };
+const market = { coin: settings.coin, coinUsd: null, solUsd: null, xmrUsd: null, updated: null };
 const network = { hashrate: null, reward: null, updated: null };
 const pool = { uuid: null, uuidFor: null, account: null, stats: null, payments: [], workers: [], updated: null, error: null };
+const TX_EXPLORERS = {
+  SOL: 'https://solscan.io/tx/', TRX: 'https://tronscan.org/#/transaction/', BSC: 'https://bscscan.com/tx/',
+  ETH: 'https://etherscan.io/tx/', LTC: 'https://blockchair.com/litecoin/transaction/', DOGE: 'https://blockchair.com/dogecoin/transaction/',
+};
 
 async function getJson(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(12e3), headers: { 'User-Agent': 'kiln-miner-dashboard' } });
@@ -484,11 +516,67 @@ async function getJson(url) {
   return res.json();
 }
 
+// CoinGecko ids for common payout coins; anything else is looked up by symbol.
+const PRICE_IDS = {
+  SOL: 'solana', USDT: 'tether', USDC: 'usd-coin', TRX: 'tron', LTC: 'litecoin', DOGE: 'dogecoin', XRP: 'ripple',
+  BTC: 'bitcoin', ETH: 'ethereum', BNB: 'binancecoin', ADA: 'cardano', SHIB: 'shiba-inu', XMR: 'monero',
+  RVN: 'ravencoin', DASH: 'dash', XLM: 'stellar', BCH: 'bitcoin-cash', ETC: 'ethereum-classic', ZEC: 'zcash',
+  DOT: 'polkadot', LINK: 'chainlink', AVAX: 'avalanche-2', ATOM: 'cosmos', TON: 'the-open-network', PEPE: 'pepe',
+  XNO: 'nano', MATIC: 'matic-network', KAS: 'kaspa', NEAR: 'near', ALGO: 'algorand',
+};
+async function priceId(symbol) {
+  if (PRICE_IDS[symbol]) return PRICE_IDS[symbol];
+  const j = await getJson(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`);
+  const hit = j.coins?.find((c) => c.symbol?.toUpperCase() === symbol);
+  if (hit) PRICE_IDS[symbol] = hit.id;
+  return hit?.id || null;
+}
+
 async function refreshMarket() {
   try {
-    const j = await getJson('https://api.coingecko.com/api/v3/simple/price?ids=monero,solana&vs_currencies=usd');
-    market.solUsd = j.solana.usd; market.xmrUsd = j.monero.usd; market.updated = Date.now();
+    const coin = settings.coin;
+    const id = await priceId(coin);
+    const ids = [...new Set(['monero', 'solana', id].filter(Boolean))].join(',');
+    const j = await getJson(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`);
+    market.solUsd = j.solana?.usd ?? market.solUsd;
+    market.xmrUsd = j.monero?.usd ?? market.xmrUsd;
+    if (coin === settings.coin) { market.coin = coin; market.coinUsd = id ? j[id]?.usd ?? null : null; }
+    market.updated = Date.now();
   } catch { /* keep last */ }
+}
+
+// ---------- payout coins ----------
+
+const UNMINEABLE = 'https://api.unminable.com/v4';
+let coinList = null; // [{ symbol, name }]
+async function getCoins() {
+  if (coinList) return coinList;
+  const j = await getJson(`${UNMINEABLE}/coin`);
+  coinList = (j.data || []).map((c) => ({ symbol: c.symbol, name: c.name })).sort((a, b) => a.symbol.localeCompare(b.symbol));
+  return coinList;
+}
+
+// Asks unMineable whether the address can receive the coin, and on which chain.
+async function checkPayout(coin, address) {
+  coin = String(coin || '').trim().toUpperCase();
+  address = String(address || '').trim();
+  if (!/^[A-Z0-9]{2,12}$/.test(coin)) return { error: 'Pick a coin.' };
+  if (!/^[A-Za-z0-9:_-]{10,120}$/.test(address)) return { error: 'That does not look like a wallet address.' };
+  let a;
+  try {
+    const res = await fetch(`${UNMINEABLE}/address/${encodeURIComponent(address)}?coin=${coin}`, { signal: AbortSignal.timeout(12e3) });
+    a = await res.json();
+  } catch {
+    return { error: 'Could not reach unMineable to check the address. Try again in a moment.' };
+  }
+  if (!a.success) return { error: a.msg || `unMineable does not accept this address for ${coin}.` };
+  const chain = a.data.chains?.find((ch) => ch.network === a.data.network);
+  if (!chain?.compatible) {
+    const names = (a.data.chains || []).filter((ch) => ch.enabled).map((ch) => ch.name).join(', ');
+    return { error: `This is not a ${coin} address unMineable can pay. ${coin} pays out on: ${names}.` };
+  }
+  if (chain.regex_memo) return { error: `${coin} on ${chain.name} needs a memo/tag, which Kiln does not support. Use a wallet address without one.` };
+  return { coin, address, network: a.data.network, chain: chain.name, threshold: Number(chain.payment_threshold) };
 }
 
 async function refreshNetwork() {
@@ -501,18 +589,21 @@ async function refreshNetwork() {
 }
 
 async function refreshPool() {
-  const base = 'https://api.unminable.com/v4';
+  const base = UNMINEABLE;
+  const key = accountKey();
   try {
-    if (pool.uuidFor !== settings.address + settings.coin) {
-      const a = await getJson(`${base}/address/${settings.address}?coin=${settings.coin}`);
+    if (pool.uuidFor !== key) {
+      const a = await getJson(`${base}/address/${encodeURIComponent(settings.address)}?coin=${settings.coin}`);
       if (!a.success) throw new Error(a.msg || 'unMineable lookup failed');
-      pool.uuid = a.data.uuid; pool.uuidFor = settings.address + settings.coin; pool.account = a.data;
+      pool.uuid = a.data.uuid; pool.uuidFor = key; pool.account = a.data;
+      if (a.data.network && a.data.network !== settings.network) { settings.network = a.data.network; saveAll(); }
     }
     const [stats, payments, workers] = await Promise.all([
       getJson(`${base}/account/${pool.uuid}/stats`),
       getJson(`${base}/account/${pool.uuid}/payments`),
       getJson(`${base}/account/${pool.uuid}/workers`),
     ]);
+    if (key !== accountKey()) return; // the wallet changed while this was loading
     pool.stats = stats.data;
     pool.payments = payments.data?.list || [];
     pool.workers = workers.data?.randomx?.workers || [];
@@ -534,6 +625,7 @@ async function refreshPool() {
 // Credits each online worker with hashrate x time since the last check.
 // Gaps longer than 5 minutes (Kiln was closed) are not credited.
 function recordFleet(workers) {
+  const fleet = fleetNow();
   const now = Date.now();
   const dt = fleet.lastAt ? Math.min(300, (now - fleet.lastAt) / 1000) : 0;
   fleet.lastAt = now;
@@ -546,6 +638,7 @@ function recordFleet(workers) {
 
 // Per-device view of the wallet: live hashrate from the pool, earnings split by share of hashes.
 function fleetView(perHash, localRate) {
+  const fleet = fleetNow();
   const earned = pool.stats ? Number(pool.stats.balance) + Number(pool.stats.paid || 0) : null;
   const past24h = pool.stats ? Number(pool.stats.rewarded?.past_24h || 0) : null;
   const names = new Set([...Object.keys(fleet.workers), ...pool.workers.map((w) => w.name), settings.worker]);
@@ -597,13 +690,17 @@ setInterval(refreshPool, 90e3);
 
 // Coins of the payout currency earned per hash, after the pool's 1% fee.
 function coinPerHash() {
-  if (!network.hashrate || !network.reward || !market.xmrUsd || !market.solUsd) return null;
+  if (!network.hashrate || !network.reward || !market.xmrUsd || !market.coinUsd || market.coin !== settings.coin) return null;
   const xmrPerHash = (BLOCKS_PER_DAY * network.reward) / (network.hashrate * 86400);
   const fee = Number(pool.stats?.mining_fee ?? 1) / 100;
-  return xmrPerHash * (market.xmrUsd / market.solUsd) * (1 - fee);
+  return xmrPerHash * (market.xmrUsd / market.coinUsd) * (1 - fee);
 }
 
 // ---------- state for the UI ----------
+
+function activeChain() {
+  return pool.account?.chains?.find((ch) => ch.network === (pool.account.network || settings.network)) || null;
+}
 
 function buildState() {
   const s = miner.summary;
@@ -640,7 +737,7 @@ function buildState() {
       coin: settings.coin,
       perHash,
       perDay,
-      perDayUsd: perDay != null && market.solUsd ? perDay * market.solUsd : null,
+      perDayUsd: perDay != null && market.coinUsd ? perDay * market.coinUsd : null,
       balance,
       threshold,
       paid: pool.stats ? Number(pool.stats.paid || 0) : null,
@@ -652,7 +749,10 @@ function buildState() {
       poolWorkers: pool.workers,
       poolUpdated: pool.updated,
       poolError: pool.error,
-      explorer: 'https://solscan.io/account/' + settings.address,
+      network: settings.network,
+      chain: activeChain()?.name || settings.network,
+      explorer: (activeChain()?.explorer_address || 'https://solscan.io/account/') + settings.address,
+      explorerTx: TX_EXPLORERS[settings.network] || null,
     },
     fleet: fleetView(perHash, rate),
     market,
@@ -707,6 +807,10 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (route === '/api/state') return send(res, 200, buildState());
+    if (route === '/api/coins') {
+      try { return send(res, 200, { coins: await getCoins(), current: settings.coin }); }
+      catch { return send(res, 200, { coins: [{ symbol: settings.coin, name: settings.coin }], current: settings.coin }); }
+    }
     if (route === '/api/history') return send(res, 200, historyFor(url.searchParams.get('range') || '1h'));
     if (route === '/api/log') {
       const since = Number(url.searchParams.get('since') || 0);
@@ -720,9 +824,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && route === '/api/settings') {
       const body = await readBody(req);
       const errors = {};
-      if (body.address !== undefined) {
-        const a = String(body.address).trim();
-        if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a)) settings.address = a; else errors.address = 'That does not look like a Solana address.';
+      let walletChanged = false;
+      if (body.address !== undefined || body.coin !== undefined) {
+        const coin = body.coin ?? settings.coin, address = body.address ?? settings.address;
+        if (String(coin).toUpperCase() !== settings.coin || String(address).trim() !== settings.address) {
+          const check = await checkPayout(coin, address);
+          if (check.error) errors.address = check.error;
+          else {
+            Object.assign(settings, { coin: check.coin, address: check.address, network: check.network });
+            walletChanged = true;
+            addLog(`Payout set to ${check.coin} on ${check.chain} (minimum payout ${check.threshold} ${check.coin}).`, 'kiln');
+          }
+        }
       }
       if (body.worker !== undefined) {
         const w = String(body.worker).trim();
@@ -733,8 +846,8 @@ const server = http.createServer(async (req, res) => {
       if (typeof body.autostart === 'boolean') settings.autostart = body.autostart;
       saveAll();
       if (Object.keys(errors).length) return send(res, 400, { errors });
-      if ('address' in body) { pool.uuidFor = null; refreshPool(); }
-      const needsRestart = miner.proc && ['threads', 'mode', 'address', 'worker'].some((k) => k in body);
+      if (walletChanged) switchAccount();
+      const needsRestart = miner.proc && (walletChanged || ['threads', 'mode', 'worker'].some((k) => k in body));
       if (needsRestart && !tune.active) restartMiner();
       return send(res, 200, { ok: true, restarted: !!needsRestart });
     }

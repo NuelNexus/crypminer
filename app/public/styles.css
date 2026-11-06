@@ -282,11 +282,11 @@ dialog form { padding: 24px; display: grid; gap: 18px; }
 dialog h2 { margin: 0; font: 600 16px var(--sans); }
 .fld { display: grid; gap: 6px; }
 .fld > span { font-weight: 500; font-size: 13px; }
-.fld input {
+.fld input, .fld select {
   height: 38px; padding: 0 11px; border: 1px solid var(--rule-strong); border-radius: var(--radius);
   background: #fff; font: 400 13px var(--mono);
 }
-.fld input:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink); }
+.fld input:focus, .fld select:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink); }
 .fld small { color: var(--ink-3); font-size: 12px; }
 .fld .err { color: var(--bad); }
 .fld .err:empty { display: none; }

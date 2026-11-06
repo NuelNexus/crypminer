@@ -1,7 +1,8 @@
 # Kiln
 
-A CPU miner dashboard for [XMRig](https://github.com/xmrig/xmrig) that pays out in SOL through
-[unMineable](https://unmineable.com). It comes three ways:
+A CPU miner dashboard for [XMRig](https://github.com/xmrig/xmrig) that pays out through
+[unMineable](https://unmineable.com) in the coin you choose (SOL, USDT, LTC and ~100 others).
+It comes three ways:
 
 - **Terminal (TUI)** — `Kiln TUI.cmd` on Windows, `./kiln-tui.sh` on Linux/macOS
 - **Web dashboard** — `Kiln.cmd`, then http://127.0.0.1:4545
@@ -9,6 +10,23 @@ A CPU miner dashboard for [XMRig](https://github.com/xmrig/xmrig) that pays out 
 
 Only Node.js 18+ is needed for the TUI and web dashboard. The first run downloads the official
 XMRig 6.26.0 release from GitHub and checks its SHA-256 before using it.
+
+## Choosing the payout coin
+
+Press **c** in the TUI, or open Settings in the web dashboard, then pick a coin and paste a wallet
+address for it. Kiln asks unMineable to check the address and detect the chain (for example USDT
+on Tron) before saving. Coins with a low minimum payout pay more often:
+
+| Coin | Minimum payout |
+| --- | --- |
+| LTC | 0.00075 LTC |
+| USDT (Tron or BSC) | 1.5 USDT |
+| DOGE | 30 DOGE |
+| SOL | 0.05 SOL |
+
+Each wallet keeps its own balance on unMineable. A balance left on a coin you switch away from is
+paid only once it reaches that coin's minimum. Addresses that need a memo or tag are not supported.
+From the command line: `node app/tui.js --coin USDT --address <address>`.
 
 ## Mining on several devices into one wallet
 
@@ -53,6 +71,7 @@ in `data/fleet.json`.
 | m | switch between balanced and max mode |
 | + / - | more / fewer threads, 0 for the recommended count |
 | t | auto-tune (tries several thread counts and keeps the fastest) |
+| c | change payout coin and address |
 | w | rename this device |
 | d | open the web dashboard |
 | q | quit |

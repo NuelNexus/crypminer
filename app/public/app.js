@@ -153,7 +153,9 @@ function render() {
   $('sessionHashes').textContent = `${fmtCount(m.sessionHashes)} hashes`;
   $('lifetime').textContent = fmtDur(s.totals.seconds);
   $('lifetimeHashes').textContent = `${fmtCount(s.totals.hashes)} hashes · ${s.totals.sessions} runs`;
-  $('solPrice').textContent = usd(s.market.solUsd, 2);
+  $('coinPriceLabel').textContent = `${s.earnings.coin} price`;
+  const price = s.market.coinUsd ?? s.market.solUsd;
+  $('solPrice').textContent = price == null ? '—' : usd(price, price < 1 ? 4 : 2);
   $('xmrPrice').textContent = s.market.xmrUsd ? `XMR ${usd(s.market.xmrUsd, 2)}` : '—';
 
   renderTuning();
@@ -257,7 +259,7 @@ function renderPayments() {
   $('paymentsBody').innerHTML = e.payments.map((p) => {
     const t = p.timestamp || p.date || p.created_at;
     const date = t ? new Date(typeof t === 'number' && t < 1e12 ? t * 1000 : t).toLocaleDateString() : '—';
-    const status = p.tx ? `<a class="head-link" href="https://solscan.io/tx/${encodeURIComponent(p.tx)}" target="_blank" rel="noreferrer">sent ↗</a>` : (p.status || 'pending');
+    const status = p.tx && e.explorerTx ? `<a class="head-link" href="${e.explorerTx}${encodeURIComponent(p.tx)}" target="_blank" rel="noreferrer">sent ↗</a>` : p.tx ? 'sent' : (p.status || 'pending');
     return `<tr><td>${date}</td><td class="num">${coin(p.amount, 6)}</td><td>${status}</td></tr>`;
   }).join('');
   $('paymentsEmpty').hidden = e.payments.length > 0;
@@ -283,7 +285,8 @@ function tickEarned() {
   const el = $('earnValue');
   const html = `${str.slice(0, cut)}<span class="tail">${str.slice(cut)}</span>`;
   if (el.innerHTML !== html) el.innerHTML = html;
-  const usdVal = state.market.solUsd ? value * state.market.solUsd : 0;
+  const price = state.market.coinUsd ?? state.market.solUsd;
+  const usdVal = price ? value * price : 0;
   $('earnUsd').textContent = '$' + usdVal.toFixed(usdVal < 1 ? 5 : 2);
 }
 
@@ -512,7 +515,25 @@ $('rangeSeg').addEventListener('click', (ev) => {
 
 // settings dialog
 const dlg = $('settingsDialog');
+async function loadCoins() {
+  const sel = $('sCoin');
+  const current = state?.settings.coin || 'SOL';
+  if (!sel.options.length) sel.innerHTML = `<option value="${current}">${current}</option>`;
+  sel.value = current;
+  try {
+    const { coins } = await api('/api/coins');
+    sel.innerHTML = coins.map((c) => `<option value="${c.symbol}">${c.symbol} — ${c.name}</option>`).join('');
+    sel.value = current;
+  } catch { /* keep the current coin only */ }
+}
+$('sCoin').addEventListener('change', () => {
+  // A different coin needs its own address.
+  $('sAddress').value = $('sCoin').value === state?.settings.coin ? state.settings.address : '';
+  $('sAddress').focus();
+});
+
 $('openSettings').addEventListener('click', () => {
+  loadCoins();
   $('sAddress').value = state?.settings.address || '';
   $('sWorker').value = state?.settings.worker || '';
   $('sAutostart').checked = !!state?.settings.autostart;
@@ -523,12 +544,15 @@ $('settingsForm').addEventListener('submit', async (ev) => {
   if (ev.submitter?.value !== 'save') return;
   ev.preventDefault();
   try {
-    await api('/api/settings', { address: $('sAddress').value, worker: $('sWorker').value, autostart: $('sAutostart').checked });
+    $('saveSettings').disabled = true;
+    await api('/api/settings', { coin: $('sCoin').value, address: $('sAddress').value, worker: $('sWorker').value, autostart: $('sAutostart').checked });
     dlg.close();
     pollState();
   } catch (err) {
     const errors = err.data?.errors || {};
     dlg.querySelectorAll('.err').forEach((e) => (e.textContent = errors[e.dataset.err] || ''));
+  } finally {
+    $('saveSettings').disabled = false;
   }
 });
 
