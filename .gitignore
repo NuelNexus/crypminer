@@ -1,0 +1,15 @@
+# Per-device data (settings, earnings history, device ledger)
+data/
+app/data/
+
+# XMRig is downloaded and checksum-verified on first run
+xmrig-*/
+download/
+
+# Build output and dependencies
+node_modules/
+dist/
+dist-staging/
+
+# Local tool settings
+.claude/

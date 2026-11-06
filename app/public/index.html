@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiln Miner</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111413'/%3E%3Cpath d='M8 22h16M10 22V12l6-4 6 4v10' stroke='%23ff4d12' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6"/><path d="M8 22h16M10 22V12l6-4 6 4v10"/></svg>
+      <div>
+        <div class="wordmark">KILN</div>
+        <div class="sub" id="routeLine">XMRig → unMineable → SOL</div>
+      </div>
+    </div>
+
+    <div class="status" id="status" data-state="stopped">
+      <span class="dot"></span>
+      <span class="status-label" id="statusLabel">Idle</span>
+      <span class="status-meta" id="statusMeta"></span>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" id="openSettings" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        Settings
+      </button>
+      <button class="btn primary" id="toggle" type="button" data-action="start">
+        <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14l12-7z"/></svg>
+        <svg class="i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        <span id="toggleLabel">Start mining</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="notice" id="setupNotice" hidden>
+    <div>
+      <h2 id="setupTitle">Windows Defender is blocking XMRig</h2>
+      <p id="setupText">Every miner gets flagged as "potentially unwanted" because malware hides miners on other people's PCs. The file here matches the official release checksum.</p>
+      <ol>
+        <li>Open <b>Windows Security</b> → <b>Virus &amp; threat protection</b> → <b>Manage settings</b></li>
+        <li><b>Exclusions</b> → <b>Add an exclusion</b> → <b>Folder</b> → <code id="setupFolder"></code></li>
+        <li>Come back here and press <b>Check again</b></li>
+      </ol>
+    </div>
+    <button class="btn" id="recheck" type="button">Check again</button>
+  </section>
+
+  <main>
+    <!-- Readouts -->
+    <section class="readouts">
+      <div class="readout hash">
+        <div class="label">Hashrate <span class="label-note">10 s average</span></div>
+        <div class="big"><span id="hrValue">—</span><span class="unit" id="hrUnit">H/s</span></div>
+        <dl class="inline-stats">
+          <div><dt>1 min</dt><dd id="hr60">—</dd></div>
+          <div><dt>15 min</dt><dd id="hr15">—</dd></div>
+          <div><dt>Peak</dt><dd id="hrPeak">—</dd></div>
+          <div><dt>Threads</dt><dd id="hrThreads">—</dd></div>
+        </dl>
+        <div class="chart-wrap strip">
+          <canvas id="stripChart" aria-label="Hashrate, last 15 minutes"></canvas>
+          <div class="axis-note"><span>−15 min</span><span>now</span></div>
+        </div>
+      </div>
+
+      <div class="readout earn">
+        <div class="label">Earned <span class="label-note">estimated, all time</span></div>
+        <div class="big coin"><span id="earnValue">0.000000000</span><span class="unit" id="earnCoin">SOL</span></div>
+        <div class="earn-usd" id="earnUsd">$0.0000</div>
+
+        <div class="payout">
+          <div class="payout-head">
+            <span>Pool balance <b id="poolBalance">—</b></span>
+            <span>Payout at <b id="threshold">0.05</b></span>
+          </div>
+          <div class="ruler" id="ruler">
+            <div class="ruler-fill" id="rulerFill"></div>
+            <div class="ruler-ticks"></div>
+          </div>
+          <div class="payout-foot">
+            <span id="payoutPct">0%</span>
+            <span id="payoutEta">—</span>
+          </div>
+        </div>
+
+        <dl class="earn-grid">
+          <div><dt>Per day</dt><dd id="perDay">—</dd><dd class="sub" id="perDayUsd"></dd></div>
+          <div><dt>Last 24 h (pool)</dt><dd id="past24">—</dd></div>
+          <div><dt>Last 7 days</dt><dd id="past7">—</dd></div>
+          <div><dt>Paid out</dt><dd id="paid">—</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- Metric strip -->
+    <section class="strip-metrics">
+      <div><span class="label">Shares</span><b id="shares">—</b><small id="sharesNote">accepted / sent</small></div>
+      <div><span class="label">Pool ping</span><b id="ping">—</b><small id="poolHost">rx.unmineable.com</small></div>
+      <div><span class="label">CPU load</span><b id="cpuLoad">—</b><small id="cpuName">—</small></div>
+      <div><span class="label">Session</span><b id="session">—</b><small id="sessionHashes">—</small></div>
+      <div><span class="label">Lifetime</span><b id="lifetime">—</b><small id="lifetimeHashes">—</small></div>
+      <div><span class="label">SOL price</span><b id="solPrice">—</b><small id="xmrPrice">—</small></div>
+    </section>
+
+    <!-- History + tuning -->
+    <section class="lower">
+      <div class="history">
+        <div class="section-head">
+          <h2>History</h2>
+          <div class="seg" role="tablist" id="rangeSeg">
+            <button role="tab" data-range="1h" aria-selected="true">1H</button>
+            <button role="tab" data-range="24h">24H</button>
+            <button role="tab" data-range="7d">7D</button>
+            <button role="tab" data-range="earn">Earnings</button>
+          </div>
+        </div>
+        <div class="chart-wrap tall">
+          <canvas id="historyChart" aria-label="History chart"></canvas>
+          <div class="tooltip" id="tooltip" hidden></div>
+          <div class="empty" id="historyEmpty" hidden>Start mining to collect history.</div>
+        </div>
+      </div>
+
+      <div class="tuning">
+        <div class="section-head">
+          <h2>Tuning</h2>
+          <span class="head-note" id="cpuSpec">—</span>
+        </div>
+
+        <div class="field-row">
+          <div>
+            <div class="field-label">Threads</div>
+            <div class="field-help" id="threadsHelp">—</div>
+          </div>
+          <div class="stepper">
+            <button type="button" id="thrDown" aria-label="Fewer threads">−</button>
+            <output id="thrValue">4</output>
+            <button type="button" id="thrUp" aria-label="More threads">+</button>
+          </div>
+        </div>
+
+        <div class="coremap" id="coremap" aria-label="CPU core map"></div>
+        <div class="coremap-legend"><span><i class="sw on"></i>mining</span><span><i class="sw"></i>free</span><span class="right">bar height = thread speed</span></div>
+
+        <div class="field-row">
+          <div>
+            <div class="field-label">Mode</div>
+            <div class="field-help" id="modeHelp">Low priority, laptop stays usable.</div>
+          </div>
+          <div class="seg" id="modeSeg">
+            <button data-mode="balanced" aria-pressed="true">Balanced</button>
+            <button data-mode="max">Max</button>
+          </div>
+        </div>
+
+        <div class="autotune" id="autotune">
+          <div>
+            <div class="field-label">Auto-tune</div>
+            <div class="field-help" id="tuneHelp">Mines with different thread counts for about a minute each and keeps the fastest.</div>
+            <div class="tune-results" id="tuneResults"></div>
+          </div>
+          <button class="btn" id="tuneBtn" type="button">Run auto-tune</button>
+        </div>
+
+        <ul class="checks" id="checks"></ul>
+
+        <div class="elevate" id="elevateRow" hidden>
+          <div class="field-help" id="elevateText"></div>
+          <button class="btn" id="elevateBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/></svg>
+            Restart as admin
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Log + payouts -->
+    <section class="bottom">
+      <div class="console">
+        <div class="section-head">
+          <h2>Miner log</h2>
+          <label class="toggle-small"><input type="checkbox" id="hideJobs" checked> Hide routine lines</label>
+        </div>
+        <pre id="log" tabindex="0" aria-live="off"></pre>
+      </div>
+      <div class="payments">
+        <div class="section-head">
+          <h2>Payouts</h2>
+          <a class="head-link" id="explorerLink" target="_blank" rel="noreferrer">Wallet on Solscan ↗</a>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th class="num">Amount</th><th>Status</th></tr></thead>
+          <tbody id="paymentsBody"></tbody>
+        </table>
+        <p class="payments-empty" id="paymentsEmpty">No payouts yet. unMineable sends <span id="thresholdText">0.05 SOL</span> once your balance reaches it.</p>
+        <p class="fine" id="poolUpdated"></p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Settings</h2>
+      <label class="fld">
+        <span>Payout address (Solana network)</span>
+        <input name="address" id="sAddress" spellcheck="false" autocomplete="off">
+        <small class="err" data-err="address"></small>
+      </label>
+      <label class="fld">
+        <span>Worker name</span>
+        <input name="worker" id="sWorker" spellcheck="false" autocomplete="off">
+        <small>How this PC shows up on unMineable.</small>
+        <small class="err" data-err="worker"></small>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="autostart" id="sAutostart">
+        <span>Start mining when the dashboard opens</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="btn ghost" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary" id="saveSettings" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
