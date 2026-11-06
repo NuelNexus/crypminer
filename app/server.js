@@ -64,9 +64,9 @@ function writeJson(file, value) {
 const defaultWorker = (os.hostname().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24) || 'device').toLowerCase();
 
 const settings = Object.assign({
-  coin: 'SOL',
-  address: 'BiwDe7t7iguzrQgUbowSadMRM29pybo3j1eBTA5NvWVS',
-  network: 'SOL',         // the payout chain unMineable detected for the address
+  coin: 'USDT',
+  address: 'TNNbxTvxH1SGwE4n4A3vXViaQw9WbFqa1y',
+  network: 'TRX',         // the payout chain unMineable detected for the address
   worker: defaultWorker,
   threads: null,          // null = use recommended
   mode: 'balanced',       // balanced | max
