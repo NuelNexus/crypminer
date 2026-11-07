@@ -12,5 +12,3 @@ dist/
 dist-staging/
 dist-release/
 
-# Local tool settings
-.claude/
