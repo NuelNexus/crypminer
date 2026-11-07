@@ -10,6 +10,7 @@ download/
 node_modules/
 dist/
 dist-staging/
+dist-release/
 
 # Local tool settings
 .claude/

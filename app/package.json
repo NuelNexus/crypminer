@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "package": "node build/package.js",
-    "tui": "node tui.js"
+    "tui": "node tui.js",
+    "release": "node build/release.js"
   },
   "devDependencies": {
     "@electron/packager": "^18.3.6",

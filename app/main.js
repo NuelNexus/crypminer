@@ -5,11 +5,16 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, shel
 const path = require('path');
 const { execFile } = require('child_process');
 
-// XMRig, its download and Kiln's data all live in the miner folder.
-// Packaged layout: <miner>\dist\Kiln-win32-x64\Kiln.exe
-const ROOT = app.isPackaged
-  ? path.resolve(path.dirname(process.execPath), '..', '..')
-  : path.resolve(__dirname, '..');
+// XMRig, its download and Kiln's data live in one folder:
+// - built from the repo (<miner>\dist\Kiln-win32-x64\Kiln.exe): the repo folder
+// - downloaded from a release and unzipped anywhere: %LOCALAPPDATA%\Kiln
+function rootFolder() {
+  if (!app.isPackaged) return path.resolve(__dirname, '..');
+  const exeDir = path.dirname(process.execPath);
+  if (path.basename(path.dirname(exeDir)).toLowerCase() === 'dist') return path.resolve(exeDir, '..', '..');
+  return path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Kiln');
+}
+const ROOT = rootFolder();
 process.env.KILN_ROOT = ROOT;
 
 const ICON = path.join(__dirname, 'assets', 'icon.png');

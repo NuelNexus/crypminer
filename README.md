@@ -6,7 +6,14 @@ It comes three ways:
 
 - **Terminal (TUI)** — `Kiln TUI.cmd` on Windows, `./kiln-tui.sh` on Linux/macOS
 - **Web dashboard** — `Kiln.cmd`, then http://127.0.0.1:4545
-- **Desktop app** — `cd app && npm install && npm run package` builds `dist\Kiln-win32-x64\Kiln.exe`
+- **Desktop app (Windows)** — download `Kiln-<version>-win32-x64.zip` from the
+  [Releases](../../releases) page, unzip it anywhere and run `Kiln.exe`. Keep the whole folder
+  together: `Kiln.exe` needs the files next to it. A downloaded copy keeps its data and XMRig in
+  `%LOCALAPPDATA%\Kiln`.
+
+To build the desktop app yourself: `cd app && npm install && npm run package` builds
+`dist\Kiln-win32-x64\Kiln.exe` and keeps its data in this folder. `npm run release` makes the zip
+for a GitHub Release.
 
 Only Node.js 18+ is needed for the TUI and web dashboard. The first run downloads the official
 XMRig 6.26.0 release from GitHub and checks its SHA-256 before using it.
