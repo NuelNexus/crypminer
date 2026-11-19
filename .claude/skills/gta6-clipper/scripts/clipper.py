@@ -62,10 +62,8 @@ def cmd_find(a):
     allow = load_allowlist(a.allowlist)
     used = load_json(a.state, {})
     q = a.query.replace(" ", "+")
-    urls = []
-    if not a.any_license:
-        urls.append(f"https://www.youtube.com/results?search_query={q}&sp={CC_FILTER}")
-    urls.append(f"ytsearchdate{a.max}:{a.query}")
+    base = f"https://www.youtube.com/results?search_query={q}"
+    urls = [f"{base}&sp={CC_FILTER}"] + ([f"{base}&sp=CAI%253D"] if a.any_license else [])
     flat = YoutubeDL({"quiet": True, "extract_flat": "in_playlist", "playlistend": a.max, "skip_download": True})
     full = YoutubeDL({"quiet": True, "skip_download": True})
     seen, results = set(), []
