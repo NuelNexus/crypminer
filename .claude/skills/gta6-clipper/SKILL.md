@@ -5,6 +5,10 @@ description: Find reusable GTA 6 videos on YouTube (Creative Commons or creators
 
 # GTA 6 Shorts clipper
 
+**Daily quota: 5 Shorts per run** (unless the user asks for another number). Use 2–3 different source
+videos, at most 2 clips from any one source, so the channel doesn't look repetitive. Spread the
+posts over the next 24 h (see step 6).
+
 Everything is free and local: `yt-dlp` finds and downloads, `ffmpeg` edits, captions come from
 YouTube's own auto-captions (word-timed json3), with `faster-whisper` as a fallback.
 Script: `scripts/clipper.py` (run `python3 scripts/clipper.py <cmd> -h` for all options).
@@ -65,6 +69,11 @@ python3 scripts/clipper.py render --plan $JOB/src/plan.json --clip 0 \
   --hook "<hook>" --out $JOB/out/clip0.mp4
 ```
 
+Every clip automatically gets: a progress bar, and an animated LIKE → SUBSCRIBE pop-up with a
+cursor clicking both, 8 s before the end (`--cta-at` to move it, `--no-cta` to drop it). If
+`assets/greenscreen/` contains green-screen videos, one is keyed in at that moment instead. Only put
+overlays there that the user is licensed to use (own work, or free for commercial use, no Content ID).
+
 Output: 1080x1920 H.264, -14 LUFS audio, blurred-fill background, zoomed gameplay, hook bar on top,
 word-by-word captions (current word yellow), on-screen credit line, plus `clip0_cover.jpg` and
 `clip0.json` (metadata + transcript). Look at the cover image (Read tool) before posting; if the
@@ -97,8 +106,8 @@ Used under <license | the creator's permission>. Clipped, edited and captioned b
 ## 6. Schedule on YouTube via Metricool
 
 1. `getBrandSettings` → `blogId` (`id`) and `timezone` of the brand with `youtubeData`.
-2. `getBestTimeToPostByNetwork` for `youtube`, next 48 h. Pick the top slots in the future, at least
-   3 h apart, one per clip.
+2. `getBestTimeToPostByNetwork` for `youtube`, next 36 h. Check `getScheduledPosts` so new posts
+   don't collide with ones already queued. Pick the 5 best future slots at least 2 h apart, one per clip.
 3. `createScheduledPost` per clip — `info`:
 
 ```json
@@ -122,7 +131,8 @@ Used under <license | the creator's permission>. Clipped, edited and captioned b
 python3 scripts/clipper.py mark <video id> --note "<n> clips scheduled"
 ```
 
-Commit `data/used.json` so the same video is never clipped twice. Finish with a short table:
+Commit `data/used.json` and push it to the branch the skill came from (in the cloud:
+`ccr-fc1b8961-6q0q2k` of `NuelNexus/crypminer`), so the same video is never clipped twice on later days. Finish with a short table:
 clip, hook, title, scheduled time, Metricool `plannerUrl`, source + reuse basis.
 
 ## Network

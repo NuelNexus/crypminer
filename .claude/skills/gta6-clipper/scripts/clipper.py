@@ -248,8 +248,30 @@ def esc(s):
     return s.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", " ")
 
 
-def build_ass(words, start, end, hook, credit, fg_bottom):
+POP = "\\fscx0\\fscy0\\t(0,170,\\fscx118\\fscy118)\\t(170,280,\\fscx100\\fscy100)"
+CURSOR = "{\\p1}m 0 0 l 0 52 l 14 40 l 24 62 l 33 58 l 23 37 l 42 37{\\p0}"
+
+
+def subscribe_popup(s0, y):
+    """Animated LIKE + SUBSCRIBE buttons with a cursor that clicks both (drawn, no external assets)."""
+    T = lambda d: ass_time(s0 + d)  # noqa: E731
+    fo = "\\fad(0,250)"
+    lx, sx = 330, 690
+    return [
+        f"Dialogue: 4,{T(0)},{T(1.6)},Like,,0,0,0,,{{\\pos({lx},{y}){POP}}}  LIKE  ",
+        f"Dialogue: 4,{T(1.6)},{T(4.6)},Liked,,0,0,0,,{{\\pos({lx},{y}){fo}\\t(0,120,\\fscx88\\fscy88)\\t(120,260,\\fscx100\\fscy100)}}  LIKED  ",
+        f"Dialogue: 4,{T(0.3)},{T(3.0)},Sub,,0,0,0,,{{\\pos({sx},{y}){POP}}}  SUBSCRIBE  ",
+        f"Dialogue: 4,{T(3.0)},{T(4.6)},Subbed,,0,0,0,,{{\\pos({sx},{y}){fo}\\t(0,120,\\fscx88\\fscy88)\\t(120,260,\\fscx100\\fscy100)}}  SUBSCRIBED  ",
+        f"Dialogue: 5,{T(0.8)},{T(1.7)},Cursor,,0,0,0,,{{\\move(980,1880,{lx + 10},{y},0,700)\\fad(150,0)"
+        f"\\t(700,800,\\fscx80\\fscy80)\\t(800,900,\\fscx100\\fscy100)}}{CURSOR}",
+        f"Dialogue: 5,{T(1.7)},{T(4.6)},Cursor,,0,0,0,,{{\\move({lx + 10},{y},{sx + 10},{y},0,1100){fo}"
+        f"\\t(1200,1300,\\fscx80\\fscy80)\\t(1300,1400,\\fscx100\\fscy100)}}{CURSOR}",
+    ]
+
+
+def build_ass(words, start, end, hook, credit, fg_bottom, progress=True, sub_at=None):
     cap_y = min(1700, fg_bottom + 190)
+    cta_y = min(1760, max(cap_y + 150, fg_bottom + 120))
     lines = [
         "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920", "WrapStyle: 0", "",
         "[V4+ Styles]",
@@ -259,6 +281,12 @@ def build_ass(words, start, end, hook, credit, fg_bottom):
         "Style: Cap,Inter,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,7,3,5,60,60,0,1",
         "Style: Hook,Inter,70,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,18,0,8,70,70,170,1",
         "Style: Credit,Inter,38,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,60,60,90,1",
+        "Style: Bar,Inter,20,&H0000D7FF,&H0000D7FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
+        "Style: Like,Inter,54,&H00000000,&H00000000,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,16,0,5,0,0,0,1",
+        "Style: Liked,Inter,54,&H00E07A06,&H00E07A06,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,16,0,5,0,0,0,1",
+        "Style: Sub,Inter,54,&H00FFFFFF,&H00FFFFFF,&H003300FF,&H003300FF,-1,0,0,0,100,100,0,0,3,16,0,5,0,0,0,1",
+        "Style: Subbed,Inter,54,&H00FFFFFF,&H00FFFFFF,&H00505050,&H00505050,-1,0,0,0,100,100,0,0,3,16,0,5,0,0,0,1",
+        "Style: Cursor,Inter,20,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,2,7,0,0,0,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     L = end - start
@@ -276,6 +304,12 @@ def build_ass(words, start, end, hook, credit, fg_bottom):
             chunks.append(cur); cur = []
     if cur:
         chunks.append(cur)
+    if progress:  # filling bar along the bottom edge
+        lines.append(f"Dialogue: 3,{ass_time(0)},{ass_time(L)},Bar,,0,0,0,,"
+                     f"{{\\pos(0,1906)\\clip(0,0,0,1920)\\t(0,{int(L * 1000)},\\clip(0,0,1080,1920))\\p1}}"
+                     f"m 0 0 l 1080 0 l 1080 14 l 0 14{{\\p0}}")
+    if sub_at is not None:
+        lines += subscribe_popup(sub_at, cta_y)
     for ch in chunks:
         for i, w in enumerate(ch):
             t0 = w["s"]
@@ -287,6 +321,18 @@ def build_ass(words, start, end, hook, credit, fg_bottom):
             lines.append(f"Dialogue: 1,{ass_time(t0)},{ass_time(min(t1, L))},Cap,,0,0,0,,"
                          f"{{\\pos(540,{cap_y})}}" + " ".join(parts))
     return "\n".join(lines) + "\n"
+
+
+def pick_greenscreen(arg):
+    """--greenscreen: a file, a folder (random pick), or 'auto' = assets/greenscreen/ if it has videos."""
+    import random
+    if not arg or arg == "none":
+        return None
+    p = SKILL_DIR / "assets" / "greenscreen" if arg == "auto" else Path(arg)
+    if p.is_dir():
+        vids = [f for f in p.iterdir() if f.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv")]
+        return random.choice(vids) if vids else None
+    return p if p.exists() else None
 
 
 def cmd_render(a):
@@ -309,15 +355,27 @@ def cmd_render(a):
     fg_top = (1920 - fg_h) // 2 - 60
     credit = a.credit if a.credit is not None else (f"Clip: {info.get('channel')} • full video in description"
                                                      if info.get("channel") else "")
-    ass = out.with_suffix(".ass")
-    ass.write_text(build_ass(plan["words"] if not a.no_captions else [], start, end, a.hook, credit, fg_top + fg_h))
     L = end - start
+    gs = pick_greenscreen(a.greenscreen) if not a.no_cta else None
+    sub_at = a.cta_at if a.cta_at is not None else max(2.0, L - 8.0)
+    ass = out.with_suffix(".ass")
+    ass.write_text(build_ass(plan["words"] if not a.no_captions else [], start, end, a.hook, credit, fg_top + fg_h,
+                             progress=not a.no_progress,
+                             sub_at=None if (a.no_cta or gs) else sub_at))
     fg = f"scale=1080:{fg_h}" if not a.zoom else f"scale=-2:{fg_h},crop=1080:{fg_h}"
     vf = (f"[0:v]split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
           f"boxblur=24:2,eq=brightness=-0.12:saturation=1.2[bg];[b]{fg},setsar=1[fg];"
-          f"[bg][fg]overlay=0:{fg_top},fps=30,ass='{ass}',fade=in:0:8[v]")
+          f"[bg][fg]overlay=0:{fg_top},fps=30[base]")
+    inputs = ["-ss", f"{start}", "-t", f"{L}", "-i", plan["source"]]
+    if gs:  # user-supplied green screen (e.g. a subscribe animation), keyed out and laid over the lower third
+        log(f"green screen overlay: {gs}")
+        inputs += ["-i", str(gs)]
+        vf += (f";[1:v]chromakey=0x00FF00:0.22:0.08,scale=880:-2,format=yuva420p,"
+               f"setpts=PTS-STARTPTS+{sub_at:.2f}/TB[gs];"
+               f"[base][gs]overlay=(W-w)/2:{fg_top + fg_h - 40}:eof_action=pass[base2]")
+    vf += f";[{'base2' if gs else 'base'}]ass='{ass}',fade=in:0:8[v]"
     af = f"loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:d=0.15,afade=t=out:st={max(0, L - 0.4):.2f}:d=0.4[aout]"
-    cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start}", "-t", f"{L}", "-i", plan["source"],
+    cmd = ["ffmpeg", "-y", "-v", "error", *inputs,
            "-filter_complex", vf + ";[0:a]" + af, "-map", "[v]", "-map", "[aout]",
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
@@ -381,6 +439,12 @@ def main():
     r.add_argument("--end", type=float)
     r.add_argument("--zoom", type=float, default=1.35, help="enlarge gameplay (crops sides); 0 = fit full width")
     r.add_argument("--no-captions", action="store_true")
+    r.add_argument("--no-progress", action="store_true", help="hide the progress bar")
+    r.add_argument("--no-cta", action="store_true", help="no like/subscribe animation")
+    r.add_argument("--cta-at", type=float, help="seconds into the clip to show like/subscribe (default: 8 s before end)")
+    r.add_argument("--greenscreen", default="auto",
+                   help="green-screen video/folder to key over the clip instead of the built-in animation; "
+                        "'auto' uses assets/greenscreen/ when it has files, 'none' disables")
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_render)
 
