@@ -1,6 +1,6 @@
 ---
 name: gta6-clipper
-description: Find reusable GTA 6 videos on YouTube (Creative Commons or creators who allowed clipping), cut the best moments into captioned vertical Shorts with free tools (yt-dlp + ffmpeg), upload them to Google Drive and schedule them to YouTube through Metricool at the best time. Use when asked to "clip GTA 6", "make GTA 6 shorts", "run the clipper", or "post GTA clips".
+description: Find reusable GTA 6 videos on YouTube (Creative Commons or creators who allowed clipping), cut the best moments into captioned vertical Shorts with free tools (yt-dlp + ffmpeg), host them via vidIQ and schedule them to YouTube through Metricool at the best time. Use when asked to "clip GTA 6", "make GTA 6 shorts", "run the clipper", or "post GTA clips".
 ---
 
 # GTA 6 Shorts clipper
@@ -36,12 +36,20 @@ deleted). If nothing qualifies, try other queries ("GTA 6 gameplay", "GTA VI", "
 Creators who told the user they allow clipping go in `data/allowlist.txt` (channel handle or id, one
 per line). Pick the candidate with the highest `velocity` (views per day).
 
-## 2. Prepare highlights
+## 2. Get the video and prepare highlights
+
+Cloud servers are bot-blocked by YouTube, so import through the vidIQ connector (free, 0 credits):
+`mcp__vidIQ__vidiq_video_upload` with `url: <youtube link>`, then poll `mcp__vidIQ__vidiq_job_poll`
+until `completed` (wait ~60 s between polls with a background `sleep`), then
+`curl -L -o $JOB/dl/source.mp4 '<videoUrl>'`. (On a home PC, `prepare --url <url>` downloads directly.)
 
 ```bash
-python3 scripts/clipper.py prepare --url <url> --out $JOB/src --count 3 --length 32
+python3 scripts/clipper.py prepare --file $JOB/dl/source.mp4 --credit "<channel>" \
+  --source-url "<youtube link>" --license "Creative Commons Attribution (CC BY)" \
+  --out $JOB/src --count 3 --length 32
 ```
 
+Captions come from faster-whisper (`base.en`); videos with no commentary get no captions.
 It scores every second by loudness, scene cuts and speech, skips intros/outros and returns the best
 non-overlapping windows with their transcript. Read each `transcript`; drop a window that is a sponsor
 read, a "subscribe" plea, a static menu, or makes no sense out of context. Adjust a window with
@@ -49,7 +57,7 @@ read, a "subscribe" plea, a static menu, or makes no sense out of context. Adjus
 
 ## 3. Render each Short
 
-Write a hook for each clip: max 6 words, curiosity or reaction, no clickbait lies, no fake claims
+Write a hook for each clip: max 6 words, and true: the gameplay is someone else's, so never "I did X"; curiosity or reaction, no clickbait lies, no fake claims
 about Rockstar. Examples: "He did NOT expect that", "Vice City cops are brutal", "This jump shouldn't work".
 
 ```bash
@@ -79,16 +87,12 @@ Used under <license | the creator's permission>. Clipped, edited and captioned b
 
 - Tags: `GTA 6`, `GTA VI`, `Grand Theft Auto 6`, `GTA 6 gameplay`, plus 3–5 from the transcript.
 
-## 5. Host on Google Drive
+## 5. Host the clip (free, via vidIQ)
 
-1. Find or create a Drive folder `GTA6 Clips` (`mcp__Google_Drive__search_files`, else `create_file`
-   with `contentMimeType: application/vnd.google-apps.folder`).
-2. Upload: `mcp__Google_Drive__create_file` with `title: <slug>.mp4`, `contentMimeType: video/mp4`,
-   `disableConversionToGoogleType: true`, `parentId: <folder>`, and
-   `base64Content: "sha256:<sha256sum of file>:<absolute path>"` (a file reference — never inline base64).
-3. `mcp__Google_Drive__share_file` with `permissionId: "anyoneWithLink"`, `role: reader`; use the
-   returned link as the media URL. (Metricool pulls Drive links only if Google Drive is linked in the
-   Metricool account; if scheduling fails on media, tell the user to link it in Metricool.)
+1. `mcp__vidIQ__vidiq_video_upload` with `localFile: {path, sizeBytes (wc -c), contentType: "video/mp4"}`.
+2. Run the returned shell `command` exactly as given (it uploads the file).
+3. Call `vidiq_video_upload` again with the `uploadId`; use its `videoUrl` as the Metricool media URL.
+   Metricool copies the file to its own storage when the post is created.
 
 ## 6. Schedule on YouTube via Metricool
 
