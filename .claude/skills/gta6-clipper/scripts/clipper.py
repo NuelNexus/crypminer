@@ -143,7 +143,11 @@ def words_from_whisper(media, model_name):
     try:
         from faster_whisper import WhisperModel
         m = WhisperModel(model_name, device="cpu", compute_type="int8")
-        segs, _ = m.transcribe(str(media), word_timestamps=True, vad_filter=True)
+        # decode with ffmpeg ourselves: avoids PyAV version breakage
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(media), "-ac", "1", "-ar", "16000",
+                              "-f", "s16le", "-"], capture_output=True, check=True).stdout
+        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        segs, _ = m.transcribe(audio, word_timestamps=True, vad_filter=True)
         return [{"w": w.word.strip(), "s": w.start, "e": w.end} for s in segs for w in (s.words or [])]
     except Exception as e:  # noqa: BLE001
         log(f"whisper unavailable ({e}); continuing without captions")
