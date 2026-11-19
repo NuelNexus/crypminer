@@ -25,7 +25,19 @@ pip install -q -U yt-dlp faster-whisper numpy
 not a bot", the environment cannot reach YouTube: stop and tell the user (see "Network" below). Do not
 try other sites to get around it.
 
-## 1. Find a source — reuse rules are not optional
+## 1a. Links from the user first (data/queue.txt)
+
+The user can paste links (YouTube videos, VODs, streams) in chat or in `data/queue.txt` as
+`<link> | <reason> | <optional section>`. A link is usable only with a reason: `cc`,
+`clip-program: <who>` (the creator publicly invites clippers) or `permission: <who/when>`. If the
+user pastes a link without one, ask once which it is; if none applies, skip it and say why. Never
+clip a streamer or YouTuber just because their video is popular. Put the reason in the post
+description (see step 4). Move processed lines to `data/queue_done.txt`.
+
+Long streams: pass `--section h:mm:ss-h:mm:ss` to `prepare` (30–60 min at a time) so transcription
+stays fast; walk through the stream in sections across runs if needed.
+
+## 1b. Otherwise search Creative Commons
 
 ```bash
 python3 scripts/clipper.py find --query "GTA 6" --days 3 --max 20 > $JOB/candidates.json
@@ -54,6 +66,20 @@ python3 scripts/clipper.py prepare --file $JOB/dl/source.mp4 --credit "<channel>
 ```
 
 Captions come from faster-whisper (`base.en`); videos with no commentary get no captions.
+**Then pick moments by reading, not just by score.** Run
+
+```bash
+python3 scripts/clipper.py transcript --plan $JOB/src/plan.json
+```
+
+It prints timestamped lines with `[LOUD]` flags (laughing, yelling, explosions, chat-reaction spikes).
+Read it like an editor and choose the strongest 20–45 s moments: punchlines and the reaction after
+them, rage or disbelief, chaotic fails, surprise reveals, hype wins, a story with a payoff. Each clip
+must make sense with no context: start a beat before the setup, end right after the reaction. Avoid
+slurs or anything mean about real people, sponsor reads, and dead air. Then render with
+`--start/--end` set to your chosen times (they are seconds in the analysed file).
+
+The automatic score below is the fallback for videos with no speech.
 It scores every second by loudness, scene cuts and speech, skips intros/outros and returns the best
 non-overlapping windows with their transcript. Read each `transcript`; drop a window that is a sponsor
 read, a "subscribe" plea, a static menu, or makes no sense out of context. Adjust a window with
@@ -89,7 +115,7 @@ captions are empty or wrong, re-render with `--no-captions` rather than post non
 
 🎥 Original video: "<source_title>" by <source_channel>
 <source_url>
-Used under <license | the creator's permission>. Clipped, edited and captioned by us.
+Used under <CC BY | <creator>'s clipping program | permission from <creator>>. Clipped, edited and captioned by us.
 
 #GTA6 #GTAVI #Shorts #Gaming
 ```

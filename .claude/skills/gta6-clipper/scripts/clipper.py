@@ -223,6 +223,17 @@ def cmd_prepare(a):
     else:
         src, subs = Path(a.file).resolve(), (Path(a.subs) if a.subs else None)
         info = {"title": src.stem, "channel": a.credit or "", "webpage_url": a.source_url or "", "license": a.license or ""}
+    if a.section:  # cut the section out first so long streams stay fast
+        def sec(x):
+            v = 0.0
+            for p in x.split(":"):
+                v = v * 60 + float(p)
+            return v
+        s0, s1 = (sec(x) for x in a.section.split("-"))
+        part = out / "section.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(s0), "-to", str(s1), "-i", str(src),
+                        "-c", "copy", str(part)], check=True)
+        src, subs = part, None
     words = words_from_json3(subs) if subs and subs.exists() else []
     if not words and not a.no_whisper:
         words = words_from_whisper(src, a.whisper_model)
@@ -392,6 +403,32 @@ def cmd_render(a):
     print()
 
 
+def cmd_transcript(a):
+    """Print the transcript as timestamped lines with loudness flags so moments can be judged by reading."""
+    plan = json.loads(Path(a.plan).read_text())
+    words = plan["words"]
+    if not words:
+        print("(no speech detected — judge by the loudness/scene-cut highlights in plan.json)")
+        return
+    src = plan["source"]
+    loud = loudness_per_sec(src, plan["duration"])
+    base = float(np.median(loud))
+    line, t0 = [], words[0]["s"]
+    def flush(t_end):
+        if not line:
+            return
+        seg = loud[int(t0):max(int(t0) + 1, int(t_end) + 1)]
+        peak = float(seg.max()) - base if len(seg) else 0
+        tag = "  [LOUD]" if peak > a.loud_db else ""
+        print(f"[{int(t0 // 60):02d}:{t0 % 60:05.2f}] {' '.join(line)}{tag}")
+    for i, w in enumerate(words):
+        gap = w["s"] - words[i - 1]["e"] if i else 0
+        if line and (gap > 0.8 or len(line) >= 18):
+            flush(words[i - 1]["e"]); line, t0 = [], w["s"]
+        line.append(w["w"])
+    flush(words[-1]["e"])
+
+
 def cmd_mark(a):
     used = load_json(a.state, {})
     used[a.id] = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "note": a.note or ""}
@@ -424,6 +461,7 @@ def main():
     pr.add_argument("--source-url")
     pr.add_argument("--license")
     pr.add_argument("--out", required=True)
+    pr.add_argument("--section", help="only analyse part of a long video/stream, e.g. 1:20:00-1:50:00")
     pr.add_argument("--length", type=int, default=32, help="clip length in seconds (Shorts max 60)")
     pr.add_argument("--count", type=int, default=3)
     pr.add_argument("--whisper-model", default="base.en")
@@ -447,6 +485,11 @@ def main():
                         "'auto' uses assets/greenscreen/ when it has files, 'none' disables")
     r.add_argument("--out", required=True)
     r.set_defaults(fn=cmd_render)
+
+    t = sub.add_parser("transcript", help="timestamped transcript with [LOUD] flags (laughs, yelling, explosions)")
+    t.add_argument("--plan", required=True)
+    t.add_argument("--loud-db", type=float, default=12, help="dB above the median that counts as a loud moment")
+    t.set_defaults(fn=cmd_transcript)
 
     m = sub.add_parser("mark")
     m.add_argument("id")
